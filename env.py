@@ -4,7 +4,7 @@ import numpy as np
 import pygame
 
 class DriftSimEnv(gym.Env):
-    def __init__(self, width=200, height=200, slipperiness=0.8):
+    def __init__(self, width=200, height=200, slipperiness=0.9):
         super().__init__()
         pygame.init()
         self.width = width
