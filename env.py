@@ -31,7 +31,7 @@ class DriftSimEnv(gym.Env):
     def reset(self):
         # Reset car state
         self.car_x = self.width // 2
-        self.car_y = self.height - 20
+        self.car_y = self.height // 2
         self.car_velocity = 0.0
         self.car_angle = 0.0
         self.velocity_x = 0.0
@@ -104,7 +104,7 @@ class DriftSimEnv(gym.Env):
         drag_coeff = 0.04        # linear drag on speed
 
         steer_accel = 0.5       # steering input accelerates steering angle (via steer_rate)
-        steer_damping = 0.12     # damping on steering rate
+        steer_damping = 0.8     # damping on steering rate
         max_steer_angle = 1.0    # clamp for steering angle
         yaw_gain = 0.12          # turn rate per unit steering angle
 
