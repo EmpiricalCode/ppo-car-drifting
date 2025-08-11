@@ -101,18 +101,20 @@ class DriftSimEnv(gym.Env):
         # Params
         max_speed = 4.0
         throttle_accel = 0.5     # accel per step at full throttle
-        drag_coeff = 0.04        # linear drag on speed
+        drag_coeff = 0.08        # linear drag on speed
 
-        steer_accel = 0.5       # steering input accelerates steering angle (via steer_rate)
-        steer_damping = 0.8     # damping on steering rate
         max_steer_angle = 1.0    # clamp for steering angle
-        yaw_gain = 0.12          # turn rate per unit steering angle
+        steer_accel = 0.5       # steering input accelerates steering angle (via steer_rate)
+        steer_drag_coeff = 0.1 # drag for steering
+        steer_damping = 0.8     # damping on steering rate
+        yaw_gain = 0.2          # turn rate per unit steering angle
 
         # Update steering dynamics:
         # steering input accelerates steering angle; yaw rate proportional to steer_angle
         self.steer_rate += steer_accel * steering
         self.steer_rate *= (1.0 - steer_damping)
         self.steer_angle += self.steer_rate
+        self.steer_angle -= steer_drag_coeff * self.steer_angle
         self.steer_angle = float(np.clip(self.steer_angle, -max_steer_angle, max_steer_angle))
 
         # Update heading (turn rate proportional to current steering angle)
