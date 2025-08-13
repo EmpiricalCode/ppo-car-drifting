@@ -99,7 +99,7 @@ class DriftSimEnv(gym.Env):
             self.speed = 0.0
 
         # Params
-        max_speed = 4.0
+        max_speed = 2.0
         throttle_accel = 0.5     # accel per step at full throttle
         drag_coeff = 0.08        # linear drag on speed
 
