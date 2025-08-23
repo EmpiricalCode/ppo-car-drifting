@@ -168,6 +168,15 @@ class DriftSimEnv(gym.Env):
         obs = self.render()
         return obs, reward, done
 
+    # Returns obs, rewards, done
+    def get_observation(self):
+
+        # Get the distances of all track points from the car's position
+        car_pos = np.array([self.car_x, self.car_y])
+        point_dist = np.sum((self.track_points_interpolated - car_pos) ** 2, axis=1)
+
+        # Find the closest point
+        closest_point = self.track_points_interpolated[np.argmin(point_dist)]
     
     def render(self):
         # Create a surface for the perspective view
