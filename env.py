@@ -3,12 +3,37 @@ from gymnasium import spaces
 import numpy as np
 import pygame
 
+from util import smooth_closed_loop
+
 class DriftSimEnv(gym.Env):
-    def __init__(self, width=200, height=200, slipperiness=0.9):
+    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, slipperiness=0.9, num_track_points=16, track_windiness=0.5):
+
         super().__init__()
         pygame.init()
+
         self.width = width
         self.height = height
+
+        self.cam_width = cam_width
+        self.cam_height = cam_height
+
+        #######################################################################
+        # Track 
+        #######################################################################
+
+        self.num_track_points = num_track_points
+        self.track_windiness = track_windiness
+        self.track_points = []
+        self.track_points_interpolated = np.array([])
+
+        #######################################################################
+        # Car Mechanics
+        #######################################################################
+
+        self.steer_angle = 0.0
+        self.steer_rate = 0.0
+        self.speed = 0.0
+
         # Slipperiness factor controls how much the car drifts (0.0-1.0)
         # Higher values make the car slide more in its previous direction
         self.slipperiness = slipperiness
@@ -22,7 +47,15 @@ class DriftSimEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=255,
                                             shape=(self.height, self.width),
                                             dtype=np.uint8)
+        
+        # Start Coordinates (Middle Right)
+        self.start_x = width * 4 // 5
+        self.start_y = height // 2
 
+        #######################################################################
+        # PyGame
+        #######################################################################
+        
         self.screen = pygame.Surface((self.width, self.height))
         
         # Initialize track and car state by calling reset
@@ -30,76 +63,58 @@ class DriftSimEnv(gym.Env):
 
     def reset(self):
         # Reset car state
-        self.car_x = self.width // 2
-        self.car_y = self.height // 2
+        self.car_x = self.start_x
+        self.car_y = self.start_y
+        
         self.car_velocity = 0.0
         self.car_angle = 0.0
         self.velocity_x = 0.0
         self.velocity_y = 0.0
         
-        # Generate a random track (closed loop with random curvature)
+        # Generate a random track 
+        # First generate a circle with a bunch of points, one of which is on the car's start coordinate
+        # Offset these points (except for the starting point) away/towards the origin
+        # Interpolate a track from these points
+
         self.track_points = []
+        self.track_points_interpolated = np.array([])
+
+        radius = self.start_x - self.width // 2
+
+        # This is how far the track point can vary (perpendicularly) from its position on the circle
+        max_offset_radius = (self.width // 2 - radius) * self.track_windiness
         
-        # Generate track using parametric equation with random variations
-        center_x, center_y = self.width // 2, self.height // 2
-        radius = min(self.width, self.height) * 0.35  # Base radius
-        
-        # Random coefficients for the parametric equation
-        a1 = np.random.uniform(0.1, 0.3)
-        a2 = np.random.uniform(0.1, 0.2)
-        b1 = np.random.uniform(2, 4)
-        b2 = np.random.uniform(3, 6)
-        
-        # Generate the track points
-        num_points = 60
-        for i in range(num_points):
-            t = 2 * np.pi * i / num_points
-            r = radius * (1 + a1 * np.sin(b1 * t) + a2 * np.cos(b2 * t))
-            x = center_x + r * np.cos(t)
-            y = center_y + r * np.sin(t)
-            self.track_points.append((int(x), int(y)))
-        
-        # Close the loop
-        self.track_points.append(self.track_points[0])
-        
-        # Generate track inner and outer borders
-        self.track_width = 20
-        self.track_inner = []
-        self.track_outer = []
-        
-        for i in range(len(self.track_points) - 1):
-            p1 = np.array(self.track_points[i])
-            p2 = np.array(self.track_points[(i + 1) % len(self.track_points)])
+        print(radius, self.width)
+
+        for index in range(0, self.num_track_points):
+
+            current_angle = (index / self.num_track_points) * 2 * np.pi
+
+            current_x = self.width // 2 + radius * np.cos(current_angle)
+            current_y = self.height // 2 + radius * np.sin(current_angle)
+
+            # Offset each point a random value between (-max_offset_radius, max_offset_radius) perpendicularly away/towards the circle origin
+            # Offset is 0 if it's the starting point
+            offset_radius = np.random.uniform(-max_offset_radius, max_offset_radius)
             
-            # Calculate normal vector
-            tangent = p2 - p1
-            normal = np.array([-tangent[1], tangent[0]])
-            normal = normal / (np.linalg.norm(normal) + 1e-8)  # Normalize
-            
-            # Calculate inner and outer points
-            inner = p1 - normal * (self.track_width / 2)
-            outer = p1 + normal * (self.track_width / 2)
-            
-            self.track_inner.append((int(inner[0]), int(inner[1])))
-            self.track_outer.append((int(outer[0]), int(outer[1])))
+            perp_offset_x = 0 if index == 0 else offset_radius * np.cos(current_angle)
+            perp_offset_y = 0 if index == 0 else offset_radius * np.sin(current_angle)
+
+            # append point to track_points
+            # (circle_x + circle_y) + (perpendicular_offset_x, perpendicular_offset_y)
+            self.track_points.append((current_x + perp_offset_x, current_y + perp_offset_y))
         
-        return self.render_frame()
+        self.track_points_interpolated = smooth_closed_loop(np.array(self.track_points), n_points_per_segment=5).astype(int)
+        
+        return self.render()
 
     def step(self, action):
         # Unpack and clamp action
         throttle = float(np.clip(action[0], 0.0, 1.0))
         steering = float(np.clip(action[1], -1.0, 1.0))
 
-        # Lazy init state
-        if not hasattr(self, "steer_angle"):
-            self.steer_angle = 0.0
-        if not hasattr(self, "steer_rate"):
-            self.steer_rate = 0.0
-        if not hasattr(self, "speed"):
-            self.speed = 0.0
-
         # Params
-        max_speed = 2.0
+        max_speed = 3.0
         throttle_accel = 0.5     # accel per step at full throttle
         drag_coeff = 0.08        # linear drag on speed
 
@@ -149,44 +164,58 @@ class DriftSimEnv(gym.Env):
         # Reward/termination
         reward = 1.0
         done = False
-        info = {}
 
-        obs = self.render_frame()
-        return obs, reward, done, info
+        obs = self.render()
+        return obs, reward, done
+
     
-    def render_car_perspective(self):
+    def render(self):
         # Create a surface for the perspective view
-        perspective_surface = pygame.Surface((self.width, self.height))
+        perspective_surface = pygame.Surface((self.cam_width, self.cam_height))
         perspective_surface.fill((0, 0, 0))
         
         # Car will be fixed at this position
-        fixed_car_x = self.width // 2
-        fixed_car_y = self.height - 20
+        fixed_car_x = self.cam_width // 2
+        fixed_car_y = self.cam_height * 0.9
         
-        # Calculate transformation matrix for rendering track from car's perspective
-        # Translate everything relative to car position and rotation
-        def transform_point(point):
-            # Translate point relative to car
-            x, y = point[0] - self.car_x, point[1] - self.car_y
-            
-            # Rotate point by negative car angle (to align with car's forward direction)
-            cos_theta = np.cos(-self.car_angle)
-            sin_theta = np.sin(-self.car_angle)
-            x_rot = x * cos_theta - y * sin_theta
-            y_rot = x * sin_theta + y * cos_theta
-            
-            # Translate to fixed car position
-            return (int(x_rot + fixed_car_x), int(y_rot + fixed_car_y))
+        # Draw track points
+        # if self.track_points_interpolated.size > 0:
+        #     pts = self.track_points_interpolated.astype(np.float32)
+
+        #     # Translate points so car is origin
+        #     rel = pts - np.array([self.car_x, self.car_y], dtype=np.float32)
+
+        #     # Rotate points so car heading is up in the perspective view
+        #     theta = -self.car_angle
+        #     c, s = np.cos(theta), np.sin(theta)
+        #     R = np.array([[c, -s],
+        #           [s,  c]], dtype=np.float32)
+        #     rotated = rel @ R.T  # row-vector multiplication: v' = R * v
+
+        #     # Place car at fixed position in perspective surface
+        #     fixed_car_x = self.cam_width // 2
+        #     fixed_car_y = self.cam_height * 0.9
+        #     screen_pts = rotated + np.array([fixed_car_x, fixed_car_y], dtype=np.float32)
+
+        #     # Convert to integer points and draw
+        #     screen_pts_int = [tuple(p.astype(int)) for p in screen_pts]
+        #     if len(screen_pts_int) >= 2:
+        #         pygame.draw.lines(perspective_surface, (0, 200, 255), True, screen_pts_int, 20)
         
-        # Transform track points
-        transformed_inner = [transform_point(p) for p in self.track_inner]
-        transformed_outer = [transform_point(p) for p in self.track_outer]
-        
-        # Draw the transformed track
-        border_color = (128, 128, 128)  # Gray color
-        pygame.draw.lines(perspective_surface, border_color, True, transformed_inner, 2)
-        pygame.draw.lines(perspective_surface, border_color, True, transformed_outer, 2)
-        
+        # draw circles at each track point in the perspective view
+        if self.track_points_interpolated.size > 0:
+            pts = self.track_points_interpolated.astype(np.float32)
+            rel = pts - np.array([self.car_x, self.car_y], dtype=np.float32)
+            theta = -self.car_angle
+            c, s = np.cos(theta), np.sin(theta)
+            R = np.array([[c, -s],
+                          [s,  c]], dtype=np.float32)
+            rotated = rel @ R.T
+            screen_pts = (rotated + np.array([fixed_car_x, fixed_car_y], dtype=np.float32)).astype(int)
+
+            for p in screen_pts:
+                pygame.draw.circle(perspective_surface, (255, 100, 100), (int(p[0]), int(p[1])), 3)
+
         # Draw the car (fixed at bottom center)
         car_surf = pygame.Surface((5, 10))
         car_surf.fill((255, 255, 255))
@@ -202,34 +231,6 @@ class DriftSimEnv(gym.Env):
         frame = frame.astype(np.uint8)
         frame = np.transpose(frame, (1, 0))
         
-        return frame
-
-    def render_frame(self):
-        self.screen.fill((0, 0, 0))
-        
-        # Draw track with inner and outer borders
-        if len(self.track_inner) > 1 and len(self.track_outer) > 1:
-            # Draw track borders
-            border_color = (128, 128, 128)  # Gray color
-            # Draw inner border
-            pygame.draw.lines(self.screen, border_color, True, self.track_inner, 2)
-            # Draw outer border
-            pygame.draw.lines(self.screen, border_color, True, self.track_outer, 2)
-
-        # Draw rotated car rectangle
-        car_surf = pygame.Surface((5, 10))
-        car_surf.fill((255, 255, 255))
-        car_surf.set_colorkey((0, 0, 0))
-        rotated = pygame.transform.rotate(car_surf, np.degrees(-self.car_angle))
-
-        rect = rotated.get_rect(center=(self.car_x, self.car_y))
-        self.screen.blit(rotated, rect)
-
-        frame = pygame.surfarray.array3d(self.screen)
-        frame = np.dot(frame[..., :3], [0.2989, 0.5870, 0.1140])  # RGB to grayscale
-        frame = frame.astype(np.uint8)
-        frame = np.transpose(frame, (1, 0))
-
         return frame
 
     def close(self):

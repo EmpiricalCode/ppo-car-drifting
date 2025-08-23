@@ -14,7 +14,7 @@ def on_key_release(event):
         pressed_keys.discard(event.key)
 
 if __name__ == "__main__":
-    env = DriftSimEnv()
+    env = DriftSimEnv(cam_height=300, cam_width=300)
 
     obs = env.reset()
     done = False
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
         action = [throttle, steering]
         
-        obs, reward, done, _ = env.step(action)
+        obs, reward, done = env.step(action)
         frame_count += 1
 
         if frame_count % 100 == 0:  # Print every 100 frames
@@ -55,8 +55,7 @@ if __name__ == "__main__":
             fps = frame_count / elapsed_time
             print(f"FPS: {fps:.2f}")
 
-        frame = env.render_frame()
-        plt.imshow(frame, cmap='gray')
+        plt.imshow(obs, cmap='gray')
         plt.axis('off')
         plt.pause(0.001)
         plt.clf()
