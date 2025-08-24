@@ -182,6 +182,13 @@ class DriftSimEnv(gym.Env):
         # Find the closest point
         self.closest_point_index = np.argmin(point_dist)
 
+        # Calculate rotation matrix for offsetting points relative to the car
+        theta = -self.car_angle
+        rotation_matrix = np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+        ])
+
         # Get the next N points on the track ahead of the car
         # This needs to handle wrapping around the end of the array
         num_points_total = len(self.track_points_interpolated)
@@ -190,18 +197,20 @@ class DriftSimEnv(gym.Env):
 
         # Offset points 
         next_points = next_points - np.array([self.car_x, self.car_y])
-        theta = -self.car_angle
-
-        rotation_matrix = np.array([
-            [np.cos(theta), -np.sin(theta)],
-            [np.sin(theta), np.cos(theta)]
-        ])
-
         transformed_next_points = rotation_matrix @ next_points.T
 
-        return transformed_next_points.T
+        # Transforming velocity vector to be relative to the car
+        car_velocity = np.array([self.velocity_x, self.velocity_y])
+        transformed_car_velocity = rotation_matrix @ car_velocity.T
+
+        return self.steer_rate, self.steer_angle, transformed_car_velocity.T, transformed_next_points.T
     
     def render(self):
+
+        car_color = (255, 255, 255)
+        points_color = (150, 150, 150)
+        debug_color = (255, 0, 0)
+
         # Create a surface for the perspective view
         perspective_surface = pygame.Surface((self.cam_width, self.cam_height))
         perspective_surface.fill((0, 0, 0))
@@ -209,59 +218,33 @@ class DriftSimEnv(gym.Env):
         # Car will be fixed at this position
         screen_car_x = self.cam_width // 2
         screen_car_y = self.cam_height * 0.9
+
+        # Visualizing the agent's observations (next N points, velocity, steering)
+        steer_rate, steer_angle, car_velocity, next_points = self.get_observation()
         
-        # Draw track points
-        # if self.track_points_interpolated.size > 0:
-        #     pts = self.track_points_interpolated.astype(np.float32)
-
-        #     # Translate points so car is origin
-        #     rel = pts - np.array([self.car_x, self.car_y], dtype=np.float32)
-
-        #     # Rotate points so car heading is up in the perspective view
-        #     theta = -self.car_angle
-        #     c, s = np.cos(theta), np.sin(theta)
-        #     R = np.array([[c, -s],
-        #           [s,  c]], dtype=np.float32)
-        #     rotated = rel @ R.T  # row-vector multiplication: v' = R * v
-
-        #     # Place car at fixed position in perspective surface
-        #     screen_car_x = self.cam_width // 2
-        #     screen_car_y = self.cam_height * 0.9
-        #     screen_pts = rotated + np.array([screen_car_x, screen_car_y], dtype=np.float32)
-
-        #     # Convert to integer points and draw
-        #     screen_pts_int = [tuple(p.astype(int)) for p in screen_pts]
-        #     if len(screen_pts_int) >= 2:
-        #         pygame.draw.lines(perspective_surface, (0, 200, 255), True, screen_pts_int, 20)
-        
-        # draw circles at each track point in the perspective view
-        # if self.track_points_interpolated.size > 0:
-        #     pts = self.track_points_interpolated.astype(np.float32)
-        #     rel = pts - np.array([self.car_x, self.car_y], dtype=np.float32)
-        #     theta = -self.car_angle
-        #     c, s = np.cos(theta), np.sin(theta)
-        #     R = np.array([[c, -s],
-        #                   [s,  c]], dtype=np.float32)
-        #     rotated = rel @ R.T
-        #     screen_pts = (rotated + np.array([screen_car_x, screen_car_y], dtype=np.float32)).astype(int)
-
-        #     # Drawing points relative to car
-        #     for i in range(len(screen_pts)):
-        #         point = screen_pts[i]
-        #         color = (150, 100, 100)
-
-        #         pygame.draw.circle(perspective_surface, color, (int(point[0]), int(point[1])), 3)
-
         # Draw the transformed points (white circles)
         # These points are relative to the car's perspective
-        transformed_points = self.get_observation() + np.array([screen_car_x, screen_car_y])
+        offset_points = next_points + np.array([screen_car_x, screen_car_y])        
 
-        for point in transformed_points:
-            pygame.draw.circle(perspective_surface, (255, 255, 255), (int(point[0]), int(point[1])), 2)
+        for point in offset_points:
+            pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), 2)
+
+        # Display steer_rate and steer_angle
+        font = pygame.font.Font(None, 16)
+        steer_rate_text = font.render(f"Rate: {steer_rate:.2f}", True, debug_color)
+        steer_angle_text = font.render(f"Angle: {steer_angle:.2f}", True, debug_color)
+        perspective_surface.blit(steer_rate_text, (5, 5))
+        perspective_surface.blit(steer_angle_text, (5, 20))
+
+        # Draw the velocity vector
+        velocity_scale = 10
+        start_pos = np.array([screen_car_x, screen_car_y])
+        end_pos = start_pos + car_velocity * velocity_scale
+        pygame.draw.line(perspective_surface, debug_color, start_pos, end_pos, 1)
 
         # Draw the car (fixed at bottom center)
         car_surf = pygame.Surface((5, 10))
-        car_surf.fill((255, 255, 255))
+        car_surf.fill(car_color)
         car_surf.set_colorkey((0, 0, 0))
         
         # Car is always pointing up in this view
@@ -270,9 +253,8 @@ class DriftSimEnv(gym.Env):
         
         # Convert to grayscale observation
         frame = pygame.surfarray.array3d(perspective_surface)
-        frame = np.dot(frame[..., :3], [0.2989, 0.5870, 0.1140])  # RGB to grayscale
+        frame = frame.transpose(1, 0, 2)
         frame = frame.astype(np.uint8)
-        frame = np.transpose(frame, (1, 0))
         
         return frame
 
