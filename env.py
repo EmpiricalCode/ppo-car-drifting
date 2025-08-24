@@ -6,7 +6,7 @@ import pygame
 from util import smooth_closed_loop
 
 class DriftSimEnv(gym.Env):
-    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5):
+    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, max_speed=3, max_steer_angle=1, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5):
 
         super().__init__()
         pygame.init()
@@ -25,8 +25,6 @@ class DriftSimEnv(gym.Env):
         self.track_windiness = track_windiness
         self.track_points = []
         self.track_points_interpolated = np.array([])
-
-        self.closest_point_index = 0
         self.num_next_points = num_next_points
 
         #######################################################################
@@ -38,6 +36,9 @@ class DriftSimEnv(gym.Env):
         self.speed = 0.0
         self.velocity_x = 0.0
         self.velocity_y = 0.0
+
+        self.max_speed = max_speed
+        self.max_steer_angle = max_steer_angle
 
         # Slipperiness factor controls how much the car drifts (0.0-1.0)
         # Higher values make the car slide more in its previous direction
@@ -107,7 +108,7 @@ class DriftSimEnv(gym.Env):
             # (circle_x + circle_y) + (perpendicular_offset_x, perpendicular_offset_y)
             self.track_points.append((current_x + perp_offset_x, current_y + perp_offset_y))
         
-        self.track_points_interpolated = smooth_closed_loop(np.array(self.track_points), n_points_per_segment=5).astype(int)
+        self.track_points_interpolated = smooth_closed_loop(np.array(self.track_points), n_points_per_segment=20).astype(int)
         
         return self.render()
 
@@ -117,11 +118,9 @@ class DriftSimEnv(gym.Env):
         steering = float(np.clip(action[1], -1.0, 1.0))
 
         # Params
-        max_speed = 3.0
         throttle_accel = 0.5     # accel per step at full throttle
         drag_coeff = 0.08        # linear drag on speed
 
-        max_steer_angle = 1.0    # clamp for steering angle
         steer_accel = 0.5       # steering input accelerates steering angle (via steer_rate)
         steer_drag_coeff = 0.1 # drag for steering
         steer_damping = 0.8     # damping on steering rate
@@ -133,7 +132,7 @@ class DriftSimEnv(gym.Env):
         self.steer_rate *= (1.0 - steer_damping)
         self.steer_angle += self.steer_rate
         self.steer_angle -= steer_drag_coeff * self.steer_angle
-        self.steer_angle = float(np.clip(self.steer_angle, -max_steer_angle, max_steer_angle))
+        self.steer_angle = float(np.clip(self.steer_angle, -self.max_steer_angle, self.max_steer_angle))
 
         # Update heading (turn rate proportional to current steering angle)
         yaw_rate = yaw_gain * self.steer_angle
@@ -147,7 +146,7 @@ class DriftSimEnv(gym.Env):
         # Update forward speed (always move in heading direction)
         self.speed += throttle_accel * throttle
         self.speed -= drag_coeff * self.speed
-        self.speed = float(np.clip(self.speed, 0.0, max_speed))
+        self.speed = float(np.clip(self.speed, 0.0, self.max_speed))
 
         # Desired velocity strictly along heading
         fwd = np.array([np.sin(self.car_angle), -np.cos(self.car_angle)], dtype=np.float32)
@@ -172,15 +171,15 @@ class DriftSimEnv(gym.Env):
         obs = self.render()
         return obs, reward, done
 
-    # Returns obs, rewards, done
+    # Returns obs
     def get_observation(self):
 
         # Get the distances of all track points from the car's position
         car_pos = np.array([self.car_x, self.car_y])
-        point_dist = np.sum((self.track_points_interpolated - car_pos) ** 2, axis=1)
+        point_dist = np.sqrt(np.sum((self.track_points_interpolated - car_pos) ** 2, axis=1))
 
         # Find the closest point
-        self.closest_point_index = np.argmin(point_dist)
+        closest_point_index = np.argmin(point_dist)
 
         # Calculate rotation matrix for offsetting points relative to the car
         theta = -self.car_angle
@@ -192,7 +191,7 @@ class DriftSimEnv(gym.Env):
         # Get the next N points on the track ahead of the car
         # This needs to handle wrapping around the end of the array
         num_points_total = len(self.track_points_interpolated)
-        indices = (self.closest_point_index - np.arange(self.num_next_points)) % num_points_total
+        indices = (closest_point_index - np.arange(0, 5*self.num_next_points, 5)) % num_points_total
         next_points = self.track_points_interpolated[indices]
 
         # Offset points 
@@ -203,7 +202,17 @@ class DriftSimEnv(gym.Env):
         car_velocity = np.array([self.velocity_x, self.velocity_y])
         transformed_car_velocity = rotation_matrix @ car_velocity.T
 
-        return self.steer_rate, self.steer_angle, transformed_car_velocity.T, transformed_next_points.T
+        # Calculate reward
+        tangent = next_points[1] - next_points[0]
+        car_speed_tangent = np.dot(car_velocity, tangent) / np.sqrt(np.sum(tangent ** 2))
+        reward = car_speed_tangent / self.max_speed
+        done = False
+
+        if (point_dist[np.argmin(point_dist)] > 20):
+            reward = -20
+            done = True
+
+        return (self.steer_rate, self.steer_angle, car_speed_tangent, transformed_car_velocity.T, transformed_next_points.T), (reward, done)
     
     def render(self):
 
@@ -220,7 +229,10 @@ class DriftSimEnv(gym.Env):
         screen_car_y = self.cam_height * 0.9
 
         # Visualizing the agent's observations (next N points, velocity, steering)
-        steer_rate, steer_angle, car_velocity, next_points = self.get_observation()
+        env_observation, env_state = self.get_observation()
+
+        steer_rate, steer_angle, car_speed_tangent, car_velocity, next_points = env_observation
+        reward, done = env_state
         
         # Draw the transformed points (white circles)
         # These points are relative to the car's perspective
@@ -229,18 +241,36 @@ class DriftSimEnv(gym.Env):
         for point in offset_points:
             pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), 2)
 
-        # Display steer_rate and steer_angle
+        # Display numbers
         font = pygame.font.Font(None, 16)
         steer_rate_text = font.render(f"Rate: {steer_rate:.2f}", True, debug_color)
-        steer_angle_text = font.render(f"Angle: {steer_angle:.2f}", True, debug_color)
         perspective_surface.blit(steer_rate_text, (5, 5))
+        steer_angle_text = font.render(f"Angle: {steer_angle:.2f}", True, debug_color)
         perspective_surface.blit(steer_angle_text, (5, 20))
+        speed_tan_text = font.render(f"Speed Tan: {car_speed_tangent:.2f}", True, debug_color)
+        perspective_surface.blit(speed_tan_text, (5, 35))
+        reward_text = font.render(f"Reward: {reward:.2f}", True, debug_color)
+        perspective_surface.blit(reward_text, (5, 50))
+        done_text = font.render(f"Done: {done}", True, debug_color)
+        perspective_surface.blit(done_text, (5, 65))
 
         # Draw the velocity vector
         velocity_scale = 10
         start_pos = np.array([screen_car_x, screen_car_y])
         end_pos = start_pos + car_velocity * velocity_scale
         pygame.draw.line(perspective_surface, debug_color, start_pos, end_pos, 1)
+
+        # Draw the tangent vector based on car's speed along the track tangent
+        tangent_color = (0, 255, 0) # Green
+        if len(next_points) > 1:
+            tangent_vec = next_points[1] - next_points[0]
+            norm = np.linalg.norm(tangent_vec)
+            if norm > 0:
+                tangent_unit_vec = tangent_vec / norm
+                # Scale the tangent vector by the car's speed component along it and the velocity scale
+                scaled_tangent = tangent_unit_vec * car_speed_tangent * velocity_scale
+                end_pos_tangent = start_pos + scaled_tangent
+                pygame.draw.line(perspective_surface, tangent_color, start_pos, end_pos_tangent, 1)
 
         # Draw the car (fixed at bottom center)
         car_surf = pygame.Surface((5, 10))
