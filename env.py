@@ -87,8 +87,6 @@ class DriftSimEnv(gym.Env):
         # This is how far the track point can vary (perpendicularly) from its position on the circle
         max_offset_radius = (self.width // 2 - radius) * self.track_windiness
         
-        print(radius, self.width)
-
         for index in range(0, self.num_track_points):
 
             current_angle = (index / self.num_track_points) * 2 * np.pi
@@ -187,8 +185,6 @@ class DriftSimEnv(gym.Env):
         num_points_total = len(self.track_points_interpolated)
         indices = (self.closest_point_index - np.arange(self.num_next_points)) % num_points_total
         next_points = self.track_points_interpolated[indices]
-
-        print(self.closest_point_index, indices)
 
         # Offset points 
         next_points = next_points - np.array([self.car_x, self.car_y])
