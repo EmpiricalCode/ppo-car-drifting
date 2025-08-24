@@ -14,7 +14,7 @@ def on_key_release(event):
         pressed_keys.discard(event.key)
 
 if __name__ == "__main__":
-    env = DriftSimEnv(cam_height=300, cam_width=300)
+    env = DriftSimEnv(cam_height=200, cam_width=200)
 
     obs = env.reset()
     done = False

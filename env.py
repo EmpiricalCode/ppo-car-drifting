@@ -6,7 +6,7 @@ import pygame
 from util import smooth_closed_loop
 
 class DriftSimEnv(gym.Env):
-    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, slipperiness=0.9, num_track_points=16, track_windiness=0.5):
+    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5):
 
         super().__init__()
         pygame.init()
@@ -25,6 +25,9 @@ class DriftSimEnv(gym.Env):
         self.track_windiness = track_windiness
         self.track_points = []
         self.track_points_interpolated = np.array([])
+
+        self.closest_point_index = 0
+        self.num_next_points = num_next_points
 
         #######################################################################
         # Car Mechanics
@@ -165,6 +168,7 @@ class DriftSimEnv(gym.Env):
         reward = 1.0
         done = False
 
+        self.get_observation()
         obs = self.render()
         return obs, reward, done
 
@@ -176,7 +180,28 @@ class DriftSimEnv(gym.Env):
         point_dist = np.sum((self.track_points_interpolated - car_pos) ** 2, axis=1)
 
         # Find the closest point
-        closest_point = self.track_points_interpolated[np.argmin(point_dist)]
+        self.closest_point_index = np.argmin(point_dist)
+
+        # Get the next N points on the track ahead of the car
+        # This needs to handle wrapping around the end of the array
+        num_points_total = len(self.track_points_interpolated)
+        indices = (self.closest_point_index - np.arange(self.num_next_points)) % num_points_total
+        next_points = self.track_points_interpolated[indices]
+
+        print(self.closest_point_index, indices)
+
+        # Offset points 
+        next_points = next_points - np.array([self.car_x, self.car_y])
+        theta = -self.car_angle
+
+        rotation_matrix = np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+        ])
+
+        transformed_next_points = rotation_matrix @ next_points.T
+
+        return transformed_next_points.T
     
     def render(self):
         # Create a surface for the perspective view
@@ -184,8 +209,8 @@ class DriftSimEnv(gym.Env):
         perspective_surface.fill((0, 0, 0))
         
         # Car will be fixed at this position
-        fixed_car_x = self.cam_width // 2
-        fixed_car_y = self.cam_height * 0.9
+        screen_car_x = self.cam_width // 2
+        screen_car_y = self.cam_height * 0.9
         
         # Draw track points
         # if self.track_points_interpolated.size > 0:
@@ -202,9 +227,9 @@ class DriftSimEnv(gym.Env):
         #     rotated = rel @ R.T  # row-vector multiplication: v' = R * v
 
         #     # Place car at fixed position in perspective surface
-        #     fixed_car_x = self.cam_width // 2
-        #     fixed_car_y = self.cam_height * 0.9
-        #     screen_pts = rotated + np.array([fixed_car_x, fixed_car_y], dtype=np.float32)
+        #     screen_car_x = self.cam_width // 2
+        #     screen_car_y = self.cam_height * 0.9
+        #     screen_pts = rotated + np.array([screen_car_x, screen_car_y], dtype=np.float32)
 
         #     # Convert to integer points and draw
         #     screen_pts_int = [tuple(p.astype(int)) for p in screen_pts]
@@ -212,18 +237,29 @@ class DriftSimEnv(gym.Env):
         #         pygame.draw.lines(perspective_surface, (0, 200, 255), True, screen_pts_int, 20)
         
         # draw circles at each track point in the perspective view
-        if self.track_points_interpolated.size > 0:
-            pts = self.track_points_interpolated.astype(np.float32)
-            rel = pts - np.array([self.car_x, self.car_y], dtype=np.float32)
-            theta = -self.car_angle
-            c, s = np.cos(theta), np.sin(theta)
-            R = np.array([[c, -s],
-                          [s,  c]], dtype=np.float32)
-            rotated = rel @ R.T
-            screen_pts = (rotated + np.array([fixed_car_x, fixed_car_y], dtype=np.float32)).astype(int)
+        # if self.track_points_interpolated.size > 0:
+        #     pts = self.track_points_interpolated.astype(np.float32)
+        #     rel = pts - np.array([self.car_x, self.car_y], dtype=np.float32)
+        #     theta = -self.car_angle
+        #     c, s = np.cos(theta), np.sin(theta)
+        #     R = np.array([[c, -s],
+        #                   [s,  c]], dtype=np.float32)
+        #     rotated = rel @ R.T
+        #     screen_pts = (rotated + np.array([screen_car_x, screen_car_y], dtype=np.float32)).astype(int)
 
-            for p in screen_pts:
-                pygame.draw.circle(perspective_surface, (255, 100, 100), (int(p[0]), int(p[1])), 3)
+        #     # Drawing points relative to car
+        #     for i in range(len(screen_pts)):
+        #         point = screen_pts[i]
+        #         color = (150, 100, 100)
+
+        #         pygame.draw.circle(perspective_surface, color, (int(point[0]), int(point[1])), 3)
+
+        # Draw the transformed points (white circles)
+        # These points are relative to the car's perspective
+        transformed_points = self.get_observation() + np.array([screen_car_x, screen_car_y])
+
+        for point in transformed_points:
+            pygame.draw.circle(perspective_surface, (255, 255, 255), (int(point[0]), int(point[1])), 2)
 
         # Draw the car (fixed at bottom center)
         car_surf = pygame.Surface((5, 10))
@@ -231,7 +267,7 @@ class DriftSimEnv(gym.Env):
         car_surf.set_colorkey((0, 0, 0))
         
         # Car is always pointing up in this view
-        rect = car_surf.get_rect(center=(fixed_car_x, fixed_car_y))
+        rect = car_surf.get_rect(center=(screen_car_x, screen_car_y))
         perspective_surface.blit(car_surf, rect)
         
         # Convert to grayscale observation
