@@ -36,6 +36,8 @@ class DriftSimEnv(gym.Env):
         self.steer_angle = 0.0
         self.steer_rate = 0.0
         self.speed = 0.0
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
 
         # Slipperiness factor controls how much the car drifts (0.0-1.0)
         # Higher values make the car slide more in its previous direction
@@ -153,7 +155,7 @@ class DriftSimEnv(gym.Env):
 
         # Only position is affected by slipperiness: blend desired velocity with previous
         s = float(np.clip(self.slipperiness, 0.0, 1.0))
-        prev_v = np.array([getattr(self, "velocity_x", 0.0), getattr(self, "velocity_y", 0.0)], dtype=np.float32)
+        prev_v = np.array([self.velocity_x, self.velocity_y], dtype=np.float32)
         v = (1.0 - s) * desired_v + s * prev_v
 
         # Update state
