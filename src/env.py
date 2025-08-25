@@ -74,9 +74,12 @@ class DriftSimEnv(gym.Env):
         
         self.car_velocity = 0.0
         self.car_angle = 0.0
+        self.steer_rate = 0.0
+        self.steer_angle = 0.0
         self.velocity_x = 0.0
         self.velocity_y = 0.0
-        
+        self.speed = 0.0
+
         # Generate a random track 
         # First generate a circle with a bunch of points, one of which is on the car's start coordinate
         # Offset these points (except for the starting point) away/towards the origin
