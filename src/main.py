@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
         action = [throttle, steering]
         
-        obs, reward, done = env.step(action)
+        obs, reward, _, done, _ = env.step(action)
         frame_count += 1
 
         if frame_count % 100 == 0:  # Print every 100 frames
@@ -55,7 +55,7 @@ if __name__ == "__main__":
             fps = frame_count / elapsed_time
             print(f"FPS: {fps:.2f}")
 
-        plt.imshow(obs, cmap='gray')
+        plt.imshow(env.render(), cmap='gray')
         plt.axis('off')
         plt.pause(0.001)
         plt.clf()

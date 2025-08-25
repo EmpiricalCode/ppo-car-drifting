@@ -6,7 +6,7 @@ import pygame
 from util import smooth_closed_loop
 
 class DriftSimEnv(gym.Env):
-    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, max_speed=3, max_steer_angle=1, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5):
+    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, max_speed=3, max_steer_angle=1, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5, track_radius=15):
 
         super().__init__()
         pygame.init()
@@ -16,6 +16,7 @@ class DriftSimEnv(gym.Env):
 
         self.cam_width = cam_width
         self.cam_height = cam_height
+        self.steps = 0
 
         #######################################################################
         # Track 
@@ -26,6 +27,7 @@ class DriftSimEnv(gym.Env):
         self.track_points = []
         self.track_points_interpolated = np.array([])
         self.num_next_points = num_next_points
+        self.track_radius = track_radius
 
         #######################################################################
         # Car Mechanics
@@ -49,10 +51,7 @@ class DriftSimEnv(gym.Env):
                                        high=np.array([1.0, 1.0]),
                                        dtype=np.float32)
 
-        # Observation space: 84x84 grayscale image
-        self.observation_space = spaces.Box(low=0, high=255,
-                                            shape=(self.height, self.width),
-                                            dtype=np.uint8)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(35,), dtype=np.float32)
         
         # Start Coordinates (Middle Right)
         self.start_x = width * 4 // 5
@@ -63,11 +62,14 @@ class DriftSimEnv(gym.Env):
         #######################################################################
         
         self.screen = pygame.Surface((self.width, self.height))
-        
+
         # Initialize track and car state by calling reset
         self.reset()
 
-    def reset(self):
+    def reset(self, seed=None):
+
+        self.steps = 0
+
         # Reset car state
         self.car_x = self.start_x
         self.car_y = self.start_y
@@ -112,10 +114,15 @@ class DriftSimEnv(gym.Env):
             self.track_points.append((current_x + perp_offset_x, current_y + perp_offset_y))
         
         self.track_points_interpolated = smooth_closed_loop(np.array(self.track_points), n_points_per_segment=20).astype(int)
+
+        # Get & flatten observation
+        obs, _ = self.get_observation()
+        obs_flattened = self.flatten_observation(obs)
         
-        return self.render()
+        return obs_flattened, {}
 
     def step(self, action):
+
         # Unpack and clamp action
         throttle = float(np.clip(action[0], 0.0, 1.0))
         steering = float(np.clip(action[1], -1.0, 1.0))
@@ -170,11 +177,20 @@ class DriftSimEnv(gym.Env):
         reward = 1.0
         done = False
 
-        self.get_observation()
-        obs = self.render()
-        return obs, reward, done
+        obs, status = self.get_observation()
+        obs_flattened = self.flatten_observation(obs)
+        reward, done = status
+
+        self.steps += 1
+
+        return obs_flattened, reward, self.steps > 1000, done,  {}
+    
+    def flatten_observation(self, obs):
+        return np.concatenate([np.atleast_1d(x).ravel() for x in obs]).astype(np.float32)
 
     # Returns obs
+    # IMPORTANT NOTE:
+    # the upwards y direction is negative in pygame, so the agent's frame of reference is   
     def get_observation(self):
 
         # Get the distances of all track points from the car's position
@@ -199,25 +215,24 @@ class DriftSimEnv(gym.Env):
 
         # Offset points 
         next_points = next_points - np.array([self.car_x, self.car_y])
-        transformed_next_points = rotation_matrix @ next_points.T
+        transformed_next_points = (rotation_matrix @ next_points.T).T
 
         # Transforming velocity vector to be relative to the car
         car_velocity = np.array([self.velocity_x, self.velocity_y])
-        transformed_car_velocity = rotation_matrix @ car_velocity.T
+        transformed_car_velocity = (rotation_matrix @ car_velocity.T).T
 
-        # Calculate reward
+        # Calculate reward/done
         tangent = next_points[1] - next_points[0]
         car_speed_tangent = np.dot(car_velocity, tangent) / np.sqrt(np.sum(tangent ** 2))
         reward = car_speed_tangent / self.max_speed
         done = False
 
-        if (point_dist[np.argmin(point_dist)] > 20):
-            reward = -20
-            done = True
+        if (point_dist[np.argmin(point_dist)] > self.track_radius):
+            reward = -5
 
-        return (self.steer_rate, self.steer_angle, car_speed_tangent, transformed_car_velocity.T, transformed_next_points.T), (reward, done)
+        return (self.steer_rate, self.steer_angle, car_speed_tangent, transformed_car_velocity, transformed_next_points), (reward, done)
     
-    def render(self):
+    def render(self, debug=False):
 
         car_color = (255, 255, 255)
         points_color = (150, 150, 150)
@@ -233,47 +248,82 @@ class DriftSimEnv(gym.Env):
 
         # Visualizing the agent's observations (next N points, velocity, steering)
         env_observation, env_state = self.get_observation()
-
-        steer_rate, steer_angle, car_speed_tangent, car_velocity, next_points = env_observation
         reward, done = env_state
-        
-        # Draw the transformed points (white circles)
-        # These points are relative to the car's perspective
-        offset_points = next_points + np.array([screen_car_x, screen_car_y])        
 
-        for point in offset_points:
-            pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), 2)
+        # If debug mode, draw next N points based on the env_observation
+        # Otherwise, just draw the track
+        if (debug):
 
-        # Display numbers
-        font = pygame.font.Font(None, 16)
-        steer_rate_text = font.render(f"Rate: {steer_rate:.2f}", True, debug_color)
-        perspective_surface.blit(steer_rate_text, (5, 5))
-        steer_angle_text = font.render(f"Angle: {steer_angle:.2f}", True, debug_color)
-        perspective_surface.blit(steer_angle_text, (5, 20))
-        speed_tan_text = font.render(f"Speed Tan: {car_speed_tangent:.2f}", True, debug_color)
-        perspective_surface.blit(speed_tan_text, (5, 35))
-        reward_text = font.render(f"Reward: {reward:.2f}", True, debug_color)
-        perspective_surface.blit(reward_text, (5, 50))
-        done_text = font.render(f"Done: {done}", True, debug_color)
-        perspective_surface.blit(done_text, (5, 65))
+            # obs is flattened 1D tensor
+            obs = self.flatten_observation(env_observation)
+            idx = 0
 
-        # Draw the velocity vector
-        velocity_scale = 10
-        start_pos = np.array([screen_car_x, screen_car_y])
-        end_pos = start_pos + car_velocity * velocity_scale
-        pygame.draw.line(perspective_surface, debug_color, start_pos, end_pos, 1)
+            # scalars
+            steer_rate = obs[idx]
+            idx += 1
+            steer_angle = obs[idx]
+            idx += 1
+            car_speed_tangent = obs[idx]
+            idx += 1
+            car_velocity = obs[idx:idx+2].reshape(2)
+            idx += 2
+            next_points = obs[idx:idx+30].reshape(15, 2)
+            idx += 30
+            
+            # Draw the transformed points (white circles)
+            # These points are relative to the car's perspective
+            offset_points = next_points + np.array([screen_car_x, screen_car_y])        
 
-        # Draw the tangent vector based on car's speed along the track tangent
-        tangent_color = (0, 255, 0) # Green
-        if len(next_points) > 1:
-            tangent_vec = next_points[1] - next_points[0]
-            norm = np.linalg.norm(tangent_vec)
-            if norm > 0:
-                tangent_unit_vec = tangent_vec / norm
-                # Scale the tangent vector by the car's speed component along it and the velocity scale
-                scaled_tangent = tangent_unit_vec * car_speed_tangent * velocity_scale
-                end_pos_tangent = start_pos + scaled_tangent
-                pygame.draw.line(perspective_surface, tangent_color, start_pos, end_pos_tangent, 1)
+            for point in offset_points:
+                pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), 2)
+                
+                # Display numbers
+            font = pygame.font.Font(None, 16)
+            steer_rate_text = font.render(f"Rate: {steer_rate:.2f}", True, debug_color)
+            perspective_surface.blit(steer_rate_text, (5, 5))
+            steer_angle_text = font.render(f"Angle: {steer_angle:.2f}", True, debug_color)
+            perspective_surface.blit(steer_angle_text, (5, 20))
+            speed_tan_text = font.render(f"Speed Tan: {car_speed_tangent:.2f}", True, debug_color)
+            perspective_surface.blit(speed_tan_text, (5, 35))
+            reward_text = font.render(f"Reward: {reward:.2f}", True, debug_color)
+            perspective_surface.blit(reward_text, (5, 50))
+            done_text = font.render(f"Done: {done}", True, debug_color)
+            perspective_surface.blit(done_text, (5, 65))
+
+            # Draw the velocity vector
+            velocity_scale = 10
+            start_pos = np.array([screen_car_x, screen_car_y])
+            end_pos = start_pos + car_velocity * velocity_scale
+            pygame.draw.line(perspective_surface, debug_color, start_pos, end_pos, 1)
+
+            # Draw the tangent vector based on car's speed along the track tangent
+            tangent_color = (0, 255, 0) # Green
+            if len(next_points) > 1:
+                tangent_vec = next_points[1] - next_points[0]
+                norm = np.linalg.norm(tangent_vec)
+                if norm > 0:
+                    tangent_unit_vec = tangent_vec / norm
+                    # Scale the tangent vector by the car's speed component along it and the velocity scale
+                    scaled_tangent = tangent_unit_vec * car_speed_tangent * velocity_scale
+                    end_pos_tangent = start_pos + scaled_tangent
+                    pygame.draw.line(perspective_surface, tangent_color, start_pos, end_pos_tangent, 1)
+
+        else:
+            # Draw all track points (transformed to car's perspective)
+            track_points_offset = self.track_points_interpolated - np.array([self.car_x, self.car_y])
+
+            theta = -self.car_angle
+            rotation_matrix = np.array([
+                [np.cos(theta), -np.sin(theta)],
+                [np.sin(theta), np.cos(theta)]
+            ])
+            transformed_track_points = (rotation_matrix @ track_points_offset.T).T
+            
+            # Shift to the screen coordinates
+            transformed_track_points += np.array([screen_car_x, screen_car_y])
+
+            for point in transformed_track_points:
+                pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), 10)
 
         # Draw the car (fixed at bottom center)
         car_surf = pygame.Surface((5, 10))
