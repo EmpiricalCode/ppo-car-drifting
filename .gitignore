@@ -1,3 +1,6 @@
 /venv
 /*/__pycache__
 .DS_Store
+/ppo_drift_tensorboard
+/saved_models
+ppo_drift_car.zip
