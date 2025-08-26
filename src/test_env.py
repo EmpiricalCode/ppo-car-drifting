@@ -1,6 +1,6 @@
 import time
 from matplotlib import pyplot as plt
-from env import DriftSimEnv
+from sim.env import DriftSimEnv
 
 # Track pressed keys using matplotlib events (no admin/root needed)
 pressed_keys = set()

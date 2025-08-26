@@ -8,7 +8,7 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
 
         self.input_layer = nn.Linear(inp_size, 64)
-        self.hidden_layer = nn.linear(64, 64)
+        self.hidden_layer = nn.Linear(64, 64)
         self.output_layer = nn.Linear(64, out_size)
 
     # Completes one forward pass through the network 
