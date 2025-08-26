@@ -10,7 +10,7 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 source "$PROJECT_ROOT/venv/bin/activate"
 
 # Run the main.py script
-python "$PROJECT_ROOT/src/main.py" "$@"
+python "$PROJECT_ROOT/src/test_env.py" "$@"
 
 # Deactivate the virtual environment when done
 deactivate
