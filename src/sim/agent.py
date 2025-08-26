@@ -8,20 +8,20 @@ from sim.network import MLP
 
 class DriftSimAgent:
 
-    def __init__(self, env, num_rollout_episodes=4, discount_factor=0.95, ppo_clip=0.2):
+    def __init__(self, env, num_rollout_timesteps=4800, discount_factor=0.993, ppo_clip=0.1):
 
         # Hyperparameters
-        self.num_rollout_episodes = num_rollout_episodes
+        self.num_rollout_timesteps = num_rollout_timesteps
         self.discount_factor = discount_factor
         self.ppo_clip = ppo_clip
-        self.learning_rate = 0.005
+        self.learning_rate = 0.0003
         self.num_updates_per_rollout = 5
 
         # Create env
         self.env = env #DriftSimEnv(track_radius=10)
 
         # Covariance matrix for action sampling
-        self.cov_var = torch.full(size=(self.env.action_space.shape[0],), fill_value=0.3) # Fixed std value of 0.3
+        self.cov_var = torch.full(size=(self.env.action_space.shape[0],), fill_value=0.1) # Fixed std value of 0.1
         self.cov_mat = torch.diag(self.cov_var)
 
         # Create actor/critic networks
@@ -88,15 +88,19 @@ class DriftSimAgent:
         # This is what we actually care about, this is flattened like the rest of the arrays
         # Discounted rewards for each episode at each time step
         rewards_to_go = []
+
+        timesteps = 0
         
         # Run episodes
-        for _ in range(self.num_rollout_episodes):
+        while (timesteps < self.num_rollout_timesteps):
 
             obs, _ = self.env.reset()
             ep_rewards = []
 
             # Start episode
-            while True:
+            while (timesteps < self.num_rollout_timesteps):
+
+                timesteps += 1
 
                 # Use the policy network to select an action
                 action, log_prob_action = self.get_action(torch.tensor(obs, dtype=torch.float32))
@@ -114,7 +118,6 @@ class DriftSimAgent:
                 # End episode
                 if (truncated or done):
                     break
-            
             rewards.append(ep_rewards)
 
         # Calculate rewards-to-go from raw rewards
