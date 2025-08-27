@@ -323,7 +323,7 @@ class DriftSimEnv(gym.Env):
             transformed_track_points += np.array([screen_car_x, screen_car_y])
 
             for point in transformed_track_points:
-                pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), 10)
+                pygame.draw.circle(perspective_surface, points_color, (int(point[0]), int(point[1])), self.track_radius)
 
         # Draw the car (fixed at bottom center)
         car_surf = pygame.Surface((5, 10))
