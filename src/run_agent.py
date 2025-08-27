@@ -4,7 +4,7 @@ import torch
 from sim.env import DriftSimEnv
 from sim.agent import DriftSimAgent
 
-sim_env = DriftSimEnv(track_radius=10)
+sim_env = DriftSimEnv(track_radius=15)
 sim_agent = DriftSimAgent(env=sim_env)
 
 sim_agent.learn(1000)
