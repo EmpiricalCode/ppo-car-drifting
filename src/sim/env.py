@@ -227,6 +227,10 @@ class DriftSimEnv(gym.Env):
         reward = car_speed_tangent / self.max_speed
         done = False
 
+        # Add some component of centeredness to the reward
+        center_dist = np.abs(point_dist[np.argmin(point_dist)] - self.track_radius) / self.track_radius
+        reward *= center_dist
+
         if (point_dist[np.argmin(point_dist)] > self.track_radius):
             reward = -10
             done = True
