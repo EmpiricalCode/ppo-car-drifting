@@ -6,7 +6,7 @@ import pygame
 from sim.util import smooth_closed_loop
 
 class DriftSimEnv(gym.Env):
-    def __init__(self, width=300, height=300, cam_width=60, cam_height=60, max_speed=3, max_steer_angle=1, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5, track_radius=15):
+    def __init__(self, width=400, height=400, cam_width=200, cam_height=200, max_speed=3, max_steer_angle=1, num_next_points=15, slipperiness=0.9, num_track_points=16, track_windiness=0.5, track_radius=15):
 
         super().__init__()
         pygame.init()
