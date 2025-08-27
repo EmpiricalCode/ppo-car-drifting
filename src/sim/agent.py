@@ -133,12 +133,15 @@ class DriftSimAgent:
     
     def learn(self, num_rollouts):
 
-        for _ in range(num_rollouts):
+        ep_mean_rew = []
+
+        for current_rollout in range(num_rollouts):
 
             # Rollout once
             rollout_states, rollout_actions, rollout_log_prob_actions, rollout_rewards_to_go, rewards = self.rollout()
 
-            print(f"Mean episode reward: {sum(map(sum, rewards)) / len(rewards)}")
+            ep_mean_rew.append((self.num_rollout_timesteps * (1+current_rollout), sum(map(sum, rewards)) / len(rewards)))
+            print(f"Mean episode reward: {ep_mean_rew[-1]}")
 
             # Get the state values
             values = self.get_values(rollout_states)
@@ -173,3 +176,5 @@ class DriftSimAgent:
                 self.value_network_optimizer.zero_grad()
                 loss_value.backward()
                 self.value_network_optimizer.step()
+
+        return ep_mean_rew
