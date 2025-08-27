@@ -1,6 +1,6 @@
 ## Benchmarking
 
-My custom PPO implementation (top) vs OpenAI's ppo_baseline (bottom).
+My custom PPO implementation (top) vs OpenAI's ppo_baseline (bottom). Notice that OpenAI's ppo_baseline reward means seem to plateau at ~400.
 
 ![PPO Custom Training](github/ppo_custom_training.png)
 ![PPO Baseline Training](github/ppo_baseline_training.png)

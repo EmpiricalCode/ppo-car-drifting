@@ -11,5 +11,5 @@ env = Monitor(env)
 model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="ppo_drift_tensorboard/")
 
 # Train the agent
-model.learn(total_timesteps=700000)
-model.save("../ppo_drift_car")
+model.learn(total_timesteps=4000000)
+model.save("ppo_drift_car")
