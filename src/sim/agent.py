@@ -25,9 +25,9 @@ class DriftSimAgent:
         self.cov_mat = torch.diag(self.cov_var)
 
         # Create actor/critic networks
-        self.policy_network = MLP(self.env.observation_space.shape[0], self.env.action_space.shape[0])
+        self.policy_network = MLP(self.env.observation_space.shape[0], self.env.action_space.shape[0], 0.01)
         # Size 1 since we are predicting the value of a given state (Value ~ Rt or the rewards-to-go)
-        self.value_network = MLP(self.env.observation_space.shape[0], 1) 
+        self.value_network = MLP(self.env.observation_space.shape[0], 1, 1) 
 
         # Create optimizers
         self.policy_network_optimizer = Adam(self.policy_network.parameters(), lr=self.learning_rate)
