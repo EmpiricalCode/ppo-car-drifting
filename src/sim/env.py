@@ -228,7 +228,8 @@ class DriftSimEnv(gym.Env):
         done = False
 
         if (point_dist[np.argmin(point_dist)] > self.track_radius):
-            reward = -5
+            reward = -10
+            done = True
 
         return (self.steer_rate, self.steer_angle, car_speed_tangent, transformed_car_velocity, transformed_next_points), (reward, done)
     
