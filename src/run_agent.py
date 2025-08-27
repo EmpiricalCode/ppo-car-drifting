@@ -8,6 +8,7 @@ sim_env = DriftSimEnv(track_radius=15)
 sim_agent = DriftSimAgent(env=sim_env)
 
 data = sim_agent.learn(1000)
+sim_agent.save()
 
 # Show training stats
 timesteps, ep_mean_rews = zip(*data)

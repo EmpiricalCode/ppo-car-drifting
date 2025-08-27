@@ -178,3 +178,7 @@ class DriftSimAgent:
                 self.value_network_optimizer.step()
 
         return ep_mean_rew
+    
+    def save(self):
+        torch.save(self.policy_network, "saved_models/policy.pth")
+        torch.save(self.value_network, "saved_models/value.pth")
