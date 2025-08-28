@@ -1,8 +1,6 @@
 Trained custom PPO running in the environment:
 
-<video width="320" height="240" controls>
-  <source src="github/custom_run.mov" type="video/mp4">
-</video>
+![PPO Custom Run](github/custom_run.mov)
 
 ## Benchmarking
 
