@@ -7,8 +7,21 @@ from sim.agent import DriftSimAgent
 sim_env = DriftSimEnv(track_radius=15)
 sim_agent = DriftSimAgent(env=sim_env)
 
-sim_agent.policy_network = torch.load("saved_models/policy.pth", weights_only=False)
-sim_agent.value_network = torch.load("saved_models/value.pth", weights_only=False)
+data = sim_agent.learn(1000)
+sim_agent.save()
+
+# Show training stats
+timesteps, ep_mean_rews = zip(*data)
+
+plt.figure(figsize=(8, 5))
+plt.plot(timesteps, ep_mean_rews, marker="o", color="blue", label = "EP Mean Reward")
+
+plt.xlabel("Timestep")
+plt.ylabel("Episode Mean Reward")
+plt.title("PPO Training Progress")
+plt.grid(True)
+plt.legend()
+plt.show()
 
 # Run the agent in the environment
 plt.ion()
