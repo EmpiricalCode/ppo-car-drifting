@@ -237,6 +237,47 @@ class DriftSimEnv(gym.Env):
 
         return (self.steer_rate, self.steer_angle, car_speed_tangent, transformed_car_velocity, transformed_next_points), (reward, done)
     
+    def render_absolute(self):
+        """
+        Draw the entire track and car in world (absolute) coordinates using self.width x self.height.
+        Returns an RGB numpy array (height, width, 3).
+        """
+        # Reuse the preallocated screen surface
+        surf = self.screen
+        surf.fill((0, 0, 0))
+
+        # Colors
+        track_color = (150, 150, 150)
+        car_color = (255, 255, 255)
+        heading_color = (0, 255, 0)
+
+        # Draw track points
+        if self.track_points_interpolated.size:
+            for p in self.track_points_interpolated:
+                pygame.draw.circle(surf, track_color, (int(p[0]), int(p[1])), self.track_radius)
+
+        # Draw car as a rotated rectangle centered at (car_x, car_y)
+        car_w, car_h = 10, 18
+        car_surf = pygame.Surface((car_w, car_h), pygame.SRCALPHA)
+        pygame.draw.rect(car_surf, car_color, car_surf.get_rect())
+        # Rotate so that car points in the same convention as the rest of the code:
+        # car_angle = 0 means pointing upward (negative y), so convert to degrees with that convention
+        angle_deg = -np.degrees(self.car_angle)
+        rotated = pygame.transform.rotate(car_surf, angle_deg)
+        rect = rotated.get_rect(center=(int(self.car_x), int(self.car_y)))
+        surf.blit(rotated, rect.topleft)
+
+        # Draw heading vector
+        fwd = np.array([np.sin(self.car_angle), -np.cos(self.car_angle)])
+        start = np.array([int(self.car_x), int(self.car_y)])
+        end = (start + (fwd * 20)).astype(int)
+        pygame.draw.line(surf, heading_color, tuple(start), tuple(end), 2)
+
+        # Convert surface to numpy frame (H, W, 3)
+        frame = pygame.surfarray.array3d(surf)
+        frame = frame.transpose(1, 0, 2).astype(np.uint8)
+        return frame
+    
     def render(self, debug=False):
 
         car_color = (255, 255, 255)
