@@ -23,7 +23,7 @@ for i in range(1000):
         obs, reward, _, done, _ = sim_env.step(action)
         total_reward += reward
 
-        plt.imshow(sim_env.render(), cmap='gray')
+        plt.imshow(sim_env.render_absolute(), cmap='gray')
         plt.axis('off')
-        plt.pause(0.05)
+        plt.pause(0.02)
         plt.clf()
