@@ -1,3 +1,9 @@
+Trained custom PPO running in the environment:
+
+<video width="320" height="240" controls>
+  <source src="github/custom_run.mov" type="video/mp4">
+</video>
+
 ## Benchmarking
 
 My custom PPO implementation (top) vs OpenAI's ppo_baseline (bottom). Notice that OpenAI's ppo_baseline reward means seem to plateau at ~400.
