@@ -1,6 +1,6 @@
 Trained custom PPO running in the environment:
 
-![PPO Custom Run](github/custom_run.mov)
+![PPO Custom Run](github/custom_run.gif)
 
 ## Benchmarking
 
