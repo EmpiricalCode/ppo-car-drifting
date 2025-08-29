@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
         plt.imshow(env.render(), cmap='gray')
         plt.axis('off')
-        plt.pause(0.001)
+        plt.pause(0.02)
         plt.clf()
 
     env.close()
