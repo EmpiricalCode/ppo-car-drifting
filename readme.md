@@ -2,7 +2,8 @@
 
 Trained custom PPO running in the environment.
 
-<img src="github/custom_run.gif" width="250" height="250"/>
+https://github.com/user-attachments/assets/50d11000-2a3d-4302-9fe4-ee7c8de093f1
+
 
 ## Benchmarking
 
